@@ -4,24 +4,38 @@ import PubNub from "pubnub";
 const { REACT_APP_PUB_KEY, REACT_APP_SUB_KEY } = process.env;
 const CHANNEL = "msg";
 
-function usePubNub(): [string[], (txt: string) => void] {
-  const setPubNub = () => {
-    if (!REACT_APP_PUB_KEY || !REACT_APP_SUB_KEY)
-      throw new Error("Missing credential!!!");
-    return new PubNub({
-      publishKey: REACT_APP_PUB_KEY,
-      subscribeKey: REACT_APP_SUB_KEY,
-    });
-  };
+interface Credential {
+  id?: string;
+  setId: (id: string) => void;
+}
 
-  const [pubnub] = useState(setPubNub());
-  const [msgList, setMsgList] = useState<string[]>([]);
+interface Messaging {
+  messages: Message[];
+  sendMessage: (txt: string) => void;
+}
+
+interface Message {
+  publisher: string;
+  message: string;
+}
+
+function usePubNub(): [Credential, Messaging] {
+  const [userUuid, setUserUuid] = useState<string>();
+  const [pubnub, setPubnub] = useState<PubNub>();
+  const [msgList, setMsgList] = useState<Message[]>([]);
 
   useEffect(() => {
     if (!pubnub) return;
 
-    const messageHandler = (msg: PubNub.MessageEvent) => {
-      setMsgList((prevState) => [...prevState, msg.message]);
+    const messageHandler = (msgEvent: PubNub.MessageEvent) => {
+      const { publisher, message } = msgEvent;
+      setMsgList((prevState) => [
+        ...prevState,
+        {
+          publisher,
+          message,
+        },
+      ]);
     };
 
     pubnub.addListener({
@@ -36,13 +50,30 @@ function usePubNub(): [string[], (txt: string) => void] {
   }, [pubnub]);
 
   const sendMessage = (message: string) => {
-    pubnub.publish({
+    pubnub?.publish({
       channel: CHANNEL,
       message,
     });
   };
 
-  return [msgList, sendMessage];
+  const establishConnection = (uuid: string) => {
+    if (!REACT_APP_PUB_KEY || !REACT_APP_SUB_KEY)
+      throw new Error("Missing credential!!!");
+    return new PubNub({
+      publishKey: REACT_APP_PUB_KEY,
+      subscribeKey: REACT_APP_SUB_KEY,
+      uuid,
+    });
+  };
+
+  useEffect(() => {
+    if (userUuid) setPubnub(establishConnection(userUuid));
+  }, [userUuid, setPubnub]);
+
+  return [
+    { id: userUuid, setId: setUserUuid },
+    { messages: msgList, sendMessage },
+  ];
 }
 
 export default usePubNub;
